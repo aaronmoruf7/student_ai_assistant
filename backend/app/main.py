@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import auth, calendar, canvas, sync, workload
+from app.routers import auth, calendar, canvas, sync, workload, planner
 
 app = FastAPI(
     title="Student AI Assistant",
@@ -24,6 +24,7 @@ app.include_router(calendar.router)
 app.include_router(canvas.router)
 app.include_router(sync.router)
 app.include_router(workload.router)
+app.include_router(planner.router)
 
 
 @app.get("/health")

@@ -1,12 +1,57 @@
 "use client";
 
-import { useSession, signOut } from "next-auth/react";
+import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useState, useCallback } from "react";
+
+import { Header } from "@/components/dashboard/header";
+import { WorkloadRamps } from "@/components/dashboard/workload-ramps";
+import { TaskList } from "@/components/dashboard/task-list";
+import { Schedule } from "@/components/dashboard/schedule";
+import { ChatPanel } from "@/components/dashboard/chat-panel";
+
+import {
+  getWorkloadRamps,
+  getTasks,
+  getWorkBlocks,
+  generatePlan,
+  syncAll,
+} from "@/lib/api";
 
 export default function Home() {
   const { data: session, status } = useSession();
   const router = useRouter();
+
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+
+  const [workloadData, setWorkloadData] = useState<any>(null);
+  const [tasksData, setTasksData] = useState<any>(null);
+  const [blocksData, setBlocksData] = useState<any>(null);
+
+  const userId = session?.user?.id;
+
+  const fetchData = useCallback(async () => {
+    if (!userId) return;
+
+    setIsLoading(true);
+    try {
+      const [workload, tasks, blocks] = await Promise.all([
+        getWorkloadRamps(userId, 4),
+        getTasks(userId),
+        getWorkBlocks(userId, 2),
+      ]);
+
+      setWorkloadData(workload);
+      setTasksData(tasks);
+      setBlocksData(blocks);
+    } catch (error) {
+      console.error("Error fetching data:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [userId]);
 
   useEffect(() => {
     if (status === "unauthenticated") {
@@ -14,10 +59,59 @@ export default function Home() {
     }
   }, [status, router]);
 
+  useEffect(() => {
+    if (userId) {
+      fetchData();
+    }
+  }, [userId, fetchData]);
+
+  const handleSync = async () => {
+    if (!userId) return;
+
+    setIsSyncing(true);
+    try {
+      await syncAll(userId);
+      await fetchData();
+    } catch (error) {
+      console.error("Sync error:", error);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const handleGeneratePlan = async () => {
+    if (!userId) return;
+
+    setIsGenerating(true);
+    try {
+      await generatePlan(userId, 1, false);
+      const blocks = await getWorkBlocks(userId, 2);
+      setBlocksData(blocks);
+    } catch (error) {
+      console.error("Generate plan error:", error);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleChatAction = (action: string) => {
+    switch (action) {
+      case "generatePlan":
+        handleGeneratePlan();
+        break;
+      case "sync":
+        handleSync();
+        break;
+    }
+  };
+
   if (status === "loading") {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <p className="text-gray-600">Loading...</p>
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <div className="text-center">
+          <div className="text-4xl mb-4">📚</div>
+          <p className="text-slate-600">Loading...</p>
+        </div>
       </div>
     );
   }
@@ -27,55 +121,49 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-8">
-      <div className="max-w-2xl mx-auto">
-        <div className="bg-white rounded-lg shadow p-6">
-          <div className="flex items-center justify-between mb-6">
-            <h1 className="text-2xl font-bold text-gray-900">
-              Student AI Assistant
-            </h1>
-            <button
-              onClick={() => signOut({ callbackUrl: "/login" })}
-              className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900"
-            >
-              Sign out
-            </button>
+    <div className="min-h-screen bg-slate-50 flex flex-col">
+      <Header
+        userName={session.user?.name || "User"}
+        userEmail={session.user?.email || ""}
+        onSync={handleSync}
+        isSyncing={isSyncing}
+      />
+
+      <main className="flex-1 container mx-auto px-4 py-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-full">
+          {/* Left column - Workload + Tasks */}
+          <div className="lg:col-span-2 space-y-6">
+            <WorkloadRamps
+              weeks={workloadData?.weeks || []}
+              isLoading={isLoading}
+            />
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <TaskList
+                tasks={tasksData?.tasks || []}
+                isLoading={isLoading}
+              />
+
+              <Schedule
+                blocks={blocksData?.blocks || []}
+                isLoading={isLoading}
+                onGeneratePlan={handleGeneratePlan}
+                isGenerating={isGenerating}
+              />
+            </div>
           </div>
 
-          <div className="space-y-4">
-            <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
-              <p className="text-green-800">
-                Signed in as <strong>{session.user?.name}</strong> ({session.user?.email})
-              </p>
+          {/* Right column - Chat */}
+          <div className="lg:col-span-1">
+            <div className="sticky top-6">
+              <ChatPanel
+                userId={userId}
+                onAction={handleChatAction}
+              />
             </div>
-
-            <div className="p-4 bg-gray-50 border border-gray-200 rounded-lg">
-              <h2 className="font-semibold text-gray-900 mb-2">Integration Status</h2>
-              <ul className="space-y-2 text-sm">
-                <li className="flex items-center gap-2">
-                  <span className="w-2 h-2 bg-green-500 rounded-full"></span>
-                  Google Calendar: Connected
-                </li>
-                <li className="flex items-center gap-2">
-                  <span className={`w-2 h-2 rounded-full ${session.user?.hasCanvas ? "bg-green-500" : "bg-yellow-500"}`}></span>
-                  Canvas: {session.user?.hasCanvas ? "Connected" : "Not connected"}
-                </li>
-              </ul>
-            </div>
-
-            {!session.user?.hasCanvas && (
-              <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                <p className="text-blue-800 text-sm">
-                  Connect your Canvas account to sync courses and assignments.
-                </p>
-                <button className="mt-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">
-                  Connect Canvas
-                </button>
-              </div>
-            )}
           </div>
         </div>
-      </div>
+      </main>
     </div>
   );
 }
