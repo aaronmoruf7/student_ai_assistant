@@ -94,16 +94,6 @@ export default function Home() {
     }
   };
 
-  const handleChatAction = (action: string) => {
-    switch (action) {
-      case "generatePlan":
-        handleGeneratePlan();
-        break;
-      case "sync":
-        handleSync();
-        break;
-    }
-  };
 
   if (status === "loading") {
     return (
@@ -130,6 +120,17 @@ export default function Home() {
       />
 
       <main className="flex-1 container mx-auto px-4 py-6">
+        {!isLoading && tasksData?.count === 0 && (
+          <div className="mb-4 flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg px-4 py-3">
+            <p className="text-sm text-blue-700">No tasks yet. Set up your courses to get started.</p>
+            <button
+              onClick={() => router.push("/setup")}
+              className="text-sm font-medium text-blue-700 underline ml-4 shrink-0"
+            >
+              Set up courses →
+            </button>
+          </div>
+        )}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-full">
           {/* Left column - Workload + Tasks */}
           <div className="lg:col-span-2 space-y-6">
@@ -156,10 +157,7 @@ export default function Home() {
           {/* Right column - Chat */}
           <div className="lg:col-span-1">
             <div className="sticky top-6">
-              <ChatPanel
-                userId={userId}
-                onAction={handleChatAction}
-              />
+              <ChatPanel userId={userId} />
             </div>
           </div>
         </div>

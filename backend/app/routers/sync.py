@@ -131,7 +131,7 @@ async def list_tasks(
                 "id": str(t.id),
                 "name": t.name,
                 "course_name": t.course_name,
-                "due_at": t.due_at.isoformat(),
+                "due_at": t.due_at.isoformat() if t.due_at else None,
                 "points_possible": t.points_possible,
                 "estimated_minutes": t.effective_minutes,
                 "user_estimated_minutes": t.user_estimated_minutes,

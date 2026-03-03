@@ -91,6 +91,71 @@ async def sync_all_workblocks_to_calendar(
     return count
 
 
+async def create_google_event(
+    user: User,
+    title: str,
+    start: datetime,
+    end: datetime,
+    description: str = "",
+) -> str:
+    """Create any Google Calendar event. Returns the new event ID."""
+    access_token = user.google_access_token
+    if not access_token:
+        raise ValueError("User has no Google access token")
+
+    event_data = {
+        "summary": title,
+        "description": description or "Created by Student AI Assistant",
+        "start": {"dateTime": start.isoformat(), "timeZone": "UTC"},
+        "end": {"dateTime": end.isoformat(), "timeZone": "UTC"},
+    }
+
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            "https://www.googleapis.com/calendar/v3/calendars/primary/events",
+            headers={"Authorization": f"Bearer {access_token}"},
+            json=event_data,
+        )
+        if response.status_code not in (200, 201):
+            raise ValueError(f"Failed to create event: {response.text}")
+        return response.json()["id"]
+
+
+async def update_google_event(
+    user: User,
+    google_event_id: str,
+    title: Optional[str] = None,
+    start: Optional[datetime] = None,
+    end: Optional[datetime] = None,
+    description: Optional[str] = None,
+) -> bool:
+    """Patch a Google Calendar event. Only provided fields are changed."""
+    access_token = user.google_access_token
+    if not access_token:
+        return False
+
+    patch: dict = {}
+    if title is not None:
+        patch["summary"] = title
+    if description is not None:
+        patch["description"] = description
+    if start is not None:
+        patch["start"] = {"dateTime": start.isoformat(), "timeZone": "UTC"}
+    if end is not None:
+        patch["end"] = {"dateTime": end.isoformat(), "timeZone": "UTC"}
+
+    if not patch:
+        return True
+
+    async with httpx.AsyncClient() as client:
+        response = await client.patch(
+            f"https://www.googleapis.com/calendar/v3/calendars/primary/events/{google_event_id}",
+            headers={"Authorization": f"Bearer {access_token}"},
+            json=patch,
+        )
+        return response.status_code in (200, 201)
+
+
 async def delete_calendar_event(
     db: AsyncSession,
     user: User,

@@ -5,104 +5,233 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Avatar } from "@/components/ui/avatar";
+import { sendChatMessage, type ChatMessage, type ToolAction } from "@/lib/api";
 
-interface Message {
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+type Message = {
   id: string;
   role: "user" | "assistant";
   content: string;
-  timestamp: Date;
-}
+  actions?: ToolAction[];
+};
 
 interface ChatPanelProps {
   userId?: string;
-  onAction?: (action: string, params?: Record<string, unknown>) => void;
 }
 
-export function ChatPanel({ userId, onAction }: ChatPanelProps) {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: "welcome",
-      role: "assistant",
-      content:
-        "Hi! I'm your study assistant. I can help you understand your workload, plan your week, or answer questions about your tasks. What would you like to know?",
-      timestamp: new Date(),
-    },
-  ]);
+// ---------------------------------------------------------------------------
+// Tool action badge
+// ---------------------------------------------------------------------------
+
+function ActionBadge({ action }: { action: ToolAction }) {
+  const icon = action.success ? "✓" : "✗";
+  const color = action.success
+    ? "bg-green-50 text-green-700 border-green-200"
+    : "bg-red-50 text-red-700 border-red-200";
+
+  return (
+    <div className={`text-xs px-2 py-1 rounded border mt-1 flex items-center gap-1.5 ${color}`}>
+      <span className="font-semibold">{icon}</span>
+      <span>{action.label}</span>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Individual message bubble
+// ---------------------------------------------------------------------------
+
+function ChatBubble({ message }: { message: Message }) {
+  const isUser = message.role === "user";
+
+  return (
+    <div className={`flex items-start gap-2 ${isUser ? "flex-row-reverse" : ""}`}>
+      <div
+        className={`w-7 h-7 rounded-full flex items-center justify-center text-sm shrink-0 ${
+          isUser ? "bg-slate-200" : "bg-blue-100"
+        }`}
+      >
+        {isUser ? "👤" : "🤖"}
+      </div>
+
+      <div className={`max-w-[85%] ${isUser ? "items-end" : "items-start"} flex flex-col`}>
+        <div
+          className={`rounded-2xl px-3 py-2 text-sm ${
+            isUser
+              ? "bg-blue-500 text-white rounded-tr-sm"
+              : "bg-slate-100 text-slate-800 rounded-tl-sm"
+          }`}
+        >
+          <p className="whitespace-pre-wrap leading-relaxed">{message.content}</p>
+        </div>
+
+        {/* Tool action badges */}
+        {message.actions && message.actions.length > 0 && (
+          <div className="mt-1 w-full space-y-0.5">
+            {message.actions.map((a, i) => (
+              <ActionBadge key={i} action={a} />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main ChatPanel
+// ---------------------------------------------------------------------------
+
+export function ChatPanel({ userId }: ChatPanelProps) {
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [isInitializing, setIsInitializing] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
+  // Auto-scroll on new messages
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages]);
+  }, [messages, isLoading]);
+
+  // Kick off the AI's opening message when the panel mounts
+  useEffect(() => {
+    if (!userId) return;
+    (async () => {
+      setIsInitializing(true);
+      try {
+        setMessages([
+          {
+            id: "opening",
+            role: "assistant",
+            content: "Hey! I'm your planning assistant. Tell me what you need.",
+          },
+        ]);
+        // const result = await sendChatMessage(userId, []);
+        // setMessages([
+        //   {
+        //     id: "opening",
+        //     role: "assistant",
+        //     content: result.reply,
+        //     actions: result.actions,
+        //   },
+        // ]);
+      } catch {
+        setMessages([
+          {
+            id: "opening",
+            role: "assistant",
+            content: "Hey! I'm your planning assistant. Tell me what you need.",
+          },
+        ]);
+      } finally {
+        setIsInitializing(false);
+      }
+    })();
+  }, [userId]);
 
   const handleSend = async () => {
-    if (!input.trim() || isLoading) return;
+    if (!input.trim() || isLoading || !userId) return;
 
-    const userMessage: Message = {
+    const userText = input.trim();
+    setInput("");
+
+    const userMsg: Message = {
       id: Date.now().toString(),
       role: "user",
-      content: input.trim(),
-      timestamp: new Date(),
+      content: userText,
     };
 
-    setMessages((prev) => [...prev, userMessage]);
-    setInput("");
+    setMessages((prev) => [...prev, userMsg]);
     setIsLoading(true);
 
+    // Build history to send (exclude the opening message metadata, just role+content)
+    const history: ChatMessage[] = [...messages, userMsg].map((m) => ({
+      role: m.role,
+      content: m.content,
+    }));
+
     try {
-      // For now, use a simple pattern matching for common actions
-      // Later, this will call an AI endpoint
-      const response = await getAIResponse(userMessage.content, userId, onAction);
+      const result = await sendChatMessage(userId, history);
 
-      const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: "assistant",
-        content: response,
-        timestamp: new Date(),
-      };
-
-      setMessages((prev) => [...prev, assistantMessage]);
-    } catch (error) {
-      const errorMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: "assistant",
-        content: "Sorry, I encountered an error. Please try again.",
-        timestamp: new Date(),
-      };
-      setMessages((prev) => [...prev, errorMessage]);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: (Date.now() + 1).toString(),
+          role: "assistant",
+          content: result.reply,
+          actions: result.actions,
+        },
+      ]);
+    } catch {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: (Date.now() + 1).toString(),
+          role: "assistant",
+          content: "Something went wrong. Please try again.",
+        },
+      ]);
     } finally {
       setIsLoading(false);
+      inputRef.current?.focus();
     }
   };
 
   return (
     <Card className="h-full flex flex-col">
-      <CardHeader className="pb-3">
-        <CardTitle className="text-lg flex items-center gap-2">
-          <span className="text-xl">🤖</span>
-          Study Assistant
+      <CardHeader className="pb-2 shrink-0">
+        <CardTitle className="text-base flex items-center gap-2">
+          <span>🤖</span>
+          Planning Assistant
         </CardTitle>
       </CardHeader>
-      <CardContent className="flex-1 flex flex-col min-h-0">
-        <ScrollArea className="flex-1 pr-4" ref={scrollRef}>
-          <div className="space-y-4">
-            {messages.map((message) => (
-              <ChatMessage key={message.id} message={message} />
-            ))}
-            {isLoading && (
-              <div className="flex items-start gap-3">
-                <Avatar className="h-8 w-8 bg-blue-100 flex items-center justify-center">
-                  <span className="text-sm">🤖</span>
-                </Avatar>
-                <div className="bg-slate-100 rounded-lg px-3 py-2">
+
+      <CardContent className="flex-1 flex flex-col min-h-0 gap-3">
+        {/* Message list */}
+        <ScrollArea className="flex-1" ref={scrollRef}>
+          <div className="space-y-4 pr-2">
+            {isInitializing ? (
+              <div className="flex items-start gap-2">
+                <div className="w-7 h-7 rounded-full bg-blue-100 flex items-center justify-center text-sm shrink-0">
+                  🤖
+                </div>
+                <div className="bg-slate-100 rounded-2xl rounded-tl-sm px-3 py-2">
                   <div className="flex gap-1">
-                    <span className="animate-bounce">●</span>
-                    <span className="animate-bounce" style={{ animationDelay: "0.1s" }}>●</span>
-                    <span className="animate-bounce" style={{ animationDelay: "0.2s" }}>●</span>
+                    {[0, 100, 200].map((delay) => (
+                      <span
+                        key={delay}
+                        className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce"
+                        style={{ animationDelay: `${delay}ms` }}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              messages.map((m) => <ChatBubble key={m.id} message={m} />)
+            )}
+
+            {isLoading && (
+              <div className="flex items-start gap-2">
+                <div className="w-7 h-7 rounded-full bg-blue-100 flex items-center justify-center text-sm shrink-0">
+                  🤖
+                </div>
+                <div className="bg-slate-100 rounded-2xl rounded-tl-sm px-3 py-2">
+                  <div className="flex gap-1">
+                    {[0, 100, 200].map((delay) => (
+                      <span
+                        key={delay}
+                        className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce"
+                        style={{ animationDelay: `${delay}ms` }}
+                      />
+                    ))}
                   </div>
                 </div>
               </div>
@@ -110,86 +239,26 @@ export function ChatPanel({ userId, onAction }: ChatPanelProps) {
           </div>
         </ScrollArea>
 
-        <div className="flex gap-2 mt-4 pt-4 border-t">
+        {/* Input */}
+        <div className="flex gap-2 shrink-0 pt-2 border-t">
           <Input
-            placeholder="Ask me anything..."
+            ref={inputRef}
+            placeholder="Tell me what you need..."
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleSend()}
-            disabled={isLoading}
+            onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSend()}
+            disabled={isLoading || isInitializing}
+            className="text-sm"
           />
-          <Button onClick={handleSend} disabled={isLoading || !input.trim()}>
+          <Button
+            onClick={handleSend}
+            disabled={isLoading || isInitializing || !input.trim()}
+            size="sm"
+          >
             Send
           </Button>
         </div>
       </CardContent>
     </Card>
   );
-}
-
-function ChatMessage({ message }: { message: Message }) {
-  const isUser = message.role === "user";
-
-  return (
-    <div className={`flex items-start gap-3 ${isUser ? "flex-row-reverse" : ""}`}>
-      <Avatar className={`h-8 w-8 flex items-center justify-center ${isUser ? "bg-slate-200" : "bg-blue-100"}`}>
-        <span className="text-sm">{isUser ? "👤" : "🤖"}</span>
-      </Avatar>
-      <div
-        className={`rounded-lg px-3 py-2 max-w-[80%] ${
-          isUser ? "bg-blue-500 text-white" : "bg-slate-100"
-        }`}
-      >
-        <p className="text-sm whitespace-pre-wrap">{message.content}</p>
-      </div>
-    </div>
-  );
-}
-
-// Simple pattern-based responses for now
-// Will be replaced with actual AI endpoint
-async function getAIResponse(
-  message: string,
-  userId?: string,
-  onAction?: (action: string, params?: Record<string, unknown>) => void
-): Promise<string> {
-  const lowerMessage = message.toLowerCase();
-
-  // Simulate network delay
-  await new Promise((resolve) => setTimeout(resolve, 500));
-
-  if (lowerMessage.includes("generate") && lowerMessage.includes("plan")) {
-    onAction?.("generatePlan");
-    return "I'm generating your study plan now! This will create study blocks based on your upcoming tasks and available time.";
-  }
-
-  if (lowerMessage.includes("sync") || lowerMessage.includes("refresh")) {
-    onAction?.("sync");
-    return "I'm syncing your data from Canvas and Google Calendar. This will update your tasks and events.";
-  }
-
-  if (lowerMessage.includes("heavy") || lowerMessage.includes("busy") || lowerMessage.includes("workload")) {
-    return "Looking at your workload ramps on the left, you can see which weeks are heaviest. The bars show how much work you have compared to your available time. Red means you're overloaded!";
-  }
-
-  if (lowerMessage.includes("task") || lowerMessage.includes("assignment")) {
-    return "Your upcoming tasks are shown in the 'Upcoming Tasks' section. Tasks are sorted by due date, with the most urgent ones highlighted. I estimate how long each will take based on the points and type.";
-  }
-
-  if (lowerMessage.includes("schedule") || lowerMessage.includes("block")) {
-    return "Your schedule shows the study blocks I've planned for you. Click 'Generate Plan' to create a new schedule based on your tasks and free time. I'll automatically avoid your classes, meals, and sleep time.";
-  }
-
-  if (lowerMessage.includes("help") || lowerMessage.includes("what can you")) {
-    return `I can help you with:
-
-• **View workload**: "How busy am I this week?"
-• **Generate plan**: "Create a study schedule"
-• **Sync data**: "Refresh my tasks and calendar"
-• **Understand tasks**: "What's due soon?"
-
-Just ask naturally, and I'll do my best to help!`;
-  }
-
-  return "I understand you're asking about your studies. Could you be more specific? I can help with your workload, schedule, tasks, or generate a study plan.";
 }

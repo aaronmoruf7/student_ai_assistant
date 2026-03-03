@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import String, DateTime
+from sqlalchemy import String, DateTime, Boolean, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.database import Base
@@ -26,6 +26,10 @@ class User(Base):
     # Canvas integration (user-provided)
     canvas_url: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     canvas_token: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+
+    # AI assistant
+    ai_preferences: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    onboarding_complete: Mapped[bool] = mapped_column(Boolean, default=False)
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(

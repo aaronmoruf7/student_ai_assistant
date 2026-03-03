@@ -77,7 +77,7 @@ async def fetch_assignments(
     courses: List[CanvasCourse] = None,
 ) -> List[CanvasAssignment]:
     """
-    Fetch upcoming assignments from Canvas.
+    Fetch upcoming dated assignments from Canvas (due in the future).
     If courses not provided, fetches them first.
     """
     base_url = _build_base_url(canvas_url)
@@ -85,9 +85,7 @@ async def fetch_assignments(
     if courses is None:
         courses = await fetch_courses(canvas_url, token)
 
-    # Build course lookup
     course_map = {c.id: c.name for c in courses}
-
     assignments = []
     now = datetime.now(timezone.utc)
 
@@ -104,7 +102,6 @@ async def fetch_assignments(
             )
 
             if response.status_code != 200:
-                # Skip courses we can't access
                 continue
 
             for assignment in response.json():
@@ -128,10 +125,62 @@ async def fetch_assignments(
                     )
                 )
 
-    # Sort by due date
     assignments.sort(key=lambda a: a.due_at)
-
     return assignments
+
+
+async def fetch_undated_assignments(
+    canvas_url: str,
+    token: str,
+    canvas_course_ids: List[int],
+) -> List[CanvasAssignment]:
+    """
+    Fetch assignments with no due date for the given course IDs.
+    Used during setup to identify undated assignments for clustering.
+    """
+    base_url = _build_base_url(canvas_url)
+    courses = await fetch_courses(canvas_url, token)
+    course_map = {c.id: c.name for c in courses}
+
+    # Filter to only the requested courses
+    selected_courses = [c for c in courses if c.id in canvas_course_ids]
+
+    undated = []
+
+    async with httpx.AsyncClient() as client:
+        for course in selected_courses:
+            response = await client.get(
+                f"{base_url}/courses/{course.id}/assignments",
+                headers={"Authorization": f"Bearer {token}"},
+                params={"per_page": 100},
+                timeout=10.0,
+            )
+
+            if response.status_code != 200:
+                continue
+
+            for assignment in response.json():
+                due_at = _parse_datetime(assignment.get("due_at"))
+
+                # Only undated assignments
+                if due_at is not None:
+                    continue
+
+                undated.append(
+                    CanvasAssignment(
+                        id=assignment["id"],
+                        course_id=course.id,
+                        course_name=course_map.get(course.id, "Unknown"),
+                        name=assignment["name"],
+                        description=_clean_html(assignment.get("description")),
+                        due_at=None,
+                        points_possible=assignment.get("points_possible"),
+                        submission_types=assignment.get("submission_types", []),
+                        has_submitted=assignment.get("has_submitted_submissions", False),
+                    )
+                )
+
+    return undated
 
 
 def _parse_datetime(value: str) -> datetime:

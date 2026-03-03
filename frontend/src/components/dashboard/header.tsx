@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Avatar } from "@/components/ui/avatar";
 import { signOut } from "next-auth/react";
@@ -24,6 +25,38 @@ export function Header({ userName, userEmail, onSync, isSyncing }: HeaderProps) 
         </div>
 
         <div className="flex items-center gap-4">
+          <Link href="/tasks">
+            <Button variant="outline" size="sm">Tasks</Button>
+          </Link>
+
+          <Link href="/estimate">
+            <Button variant="outline" size="sm">Estimate</Button>
+          </Link>
+
+          <Link href="/settings">
+            <Button variant="outline" size="sm">Settings</Button>
+          </Link>
+
+          <Link href="/setup">
+            <Button variant="outline" size="sm">⚙️ Setup</Button>
+          </Link>
+
+          <Link href="/data">
+            <Button variant="outline" size="sm">Data</Button>
+          </Link>
+
+          <Link href="/preferences">
+            <Button variant="outline" size="sm">Preferences</Button>
+          </Link>
+
+          <Link href="/plan">
+            <Button variant="outline" size="sm">Plan</Button>
+          </Link>
+
+          <Link href="/workload">
+            <Button variant="outline" size="sm">Workload</Button>
+          </Link>
+
           <Button
             variant="outline"
             size="sm"
